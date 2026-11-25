@@ -77,6 +77,7 @@ import org.jenkinsci.Symbol;
 import org.jenkinsci.plugin.gitea.client.api.Gitea;
 import org.jenkinsci.plugin.gitea.client.api.GiteaAuth;
 import org.jenkinsci.plugin.gitea.client.api.GiteaConnection;
+import org.jenkinsci.plugin.gitea.client.api.GiteaHttpStatusException;
 import org.jenkinsci.plugin.gitea.client.api.GiteaOrganization;
 import org.jenkinsci.plugin.gitea.client.api.GiteaOwner;
 import org.jenkinsci.plugin.gitea.client.api.GiteaRepository;
@@ -152,8 +153,22 @@ public class GiteaSCMNavigator extends SCMNavigator {
         GiteaSCMNavigatorContext context = new GiteaSCMNavigatorContext().withTraits(traits);
         try (GiteaSCMNavigatorRequest request = context.newRequest(this, observer);
              GiteaConnection c = gitea(observer.getContext()).open()) {
-            giteaOwner = c.fetchOwner(repoOwner);
-            List<GiteaRepository> repositories = c.fetchRepositories(giteaOwner);
+            List<GiteaRepository> repositories;
+            Set<String> includes = observer.getIncludes();
+            if (includes != null && includes.size() == 1) {
+                // a single included repository (e.g. from an event) is fetched, not found in a listing of the owner
+                repositories = new ArrayList<>(1);
+                try {
+                    repositories.add(c.fetchRepository(repoOwner, includes.iterator().next()));
+                } catch (GiteaHttpStatusException e) {
+                    if (e.getStatusCode() != 404) {
+                        throw e;
+                    }
+                }
+            } else {
+                giteaOwner = c.fetchOwner(repoOwner);
+                repositories = c.fetchRepositories(giteaOwner);
+            }
 
             int count = 0;
             observer.getListener().getLogger().format("%n  Checking repositories...%n");
